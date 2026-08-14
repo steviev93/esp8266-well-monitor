@@ -1,0 +1,9 @@
+build/
+sdkconfig.old
+*.o
+*.obj
+*.bin
+*.elf
+*.map
+.vscode/
+.idea/
