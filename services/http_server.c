@@ -1,12 +1,4 @@
-
-#include "esp_http_server.h"
-#include "app_types.h"
-#include "nvs_service.h"
-
-#define SSID_SIZE                    33
-#define PASSWORD_SIZE                65
-#define ITEM_SIZE                    384
-#define MAX_REQUEST_BODY_SIZE        256
+#include "http_server.h"
 
 static httpd_handle_t g_http_server = NULL;
 
@@ -34,7 +26,7 @@ static esp_err_t handle_root(httpd_req_t *req)
 static esp_err_t handle_get_reading(httpd_req_t *req)
 {
     reading_t r;
-    if (!get_latest_reading(&r)) {
+    if (!take_sensor_reading(&r)) {
         send_json(req, "{\"ok\":false,\"error\":\"no_reading_yet\"}");
         return ESP_OK;
     }
@@ -70,84 +62,6 @@ static esp_err_t handle_get_reading(httpd_req_t *req)
     return ESP_OK;
 }
 
-
-//TODO: limit number of readings in chunks. Don't try to load all of them
-static esp_err_t handle_get_readings(httpd_req_t *req)
-{
-    reading_store_t reading_store = {0};
-    esp_err_t result = get_reading_store(&reading_store);
-
-    if (result != ESP_OK) {
-        ESP_LOGE(
-            TAG,
-            "Error reading store: %s",
-            esp_err_to_name(result)
-        );
-        send_json(
-            req,
-            "{\"ok\":false,\"error\":\"reading_store_failed\"}"
-        );
-
-        return ESP_OK;
-    }
-
-    char json[ITEM_SIZE*50];
-
-    uint32_t count = reading_store.count;
-
-    size_t offset = 0;
-
-    offset += snprintf(
-        json,
-        sizeof(json),
-        "{\"ok\":true,\"count\":%u,\"readings\":[",
-        count
-    );
-
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t idx = (reading_store.head + MAX_READINGS - count + i) % MAX_READINGS;
-        reading_t *r = &reading_store.readings[idx];
-
-        offset += snprintf(
-            json + offset,
-            sizeof(json) - offset,
-            "%s{"
-            "\"sequence\":%u,"
-            "\"uptime_ms\":%u,"
-            "\"ads_raw\":%d,"
-            "\"shunt_uV\":%ld,"
-            "\"shunt_mV\":%ld,"
-            "\"loop_uA\":%ld,"
-            "\"normalized_permille\":%ld,"
-            "\"level_percent_x100\":%ld,"
-            "\"water_level_mm\":%ld"
-            "}",
-            i == 0 ? "" : ",",
-            r->sequence,
-            r->uptime_ms,
-            r->ads_raw,
-            (long)r->shunt_uV,
-            (long)r->shunt_mV,
-            (long)r->loop_uA,
-            (long)r->normalized_permille,
-            (long)r->level_percent_x100,
-            (long)r->water_level_mm
-        );
-    }
-
-    offset += snprintf(
-        json + offset,
-        sizeof(json) - offset,
-        "]}"
-    );
-
-    send_json(req, json);
-    return ESP_OK;
-}
-
-// why is this even here? 
-// We should be taking incremental samples and serving them, not posting them
-// ok, maybe we can have a task in board that incrementally takes, then use this like an int?
 static esp_err_t handle_post_sample(httpd_req_t *req)
 {
     reading_t r;
@@ -156,7 +70,7 @@ static esp_err_t handle_post_sample(httpd_req_t *req)
         return ESP_OK;
     }
 
-    add_reading(&r);
+    nvs_store_pending_reading(&r);
 
     char json[384];
     snprintf(
@@ -284,7 +198,7 @@ static esp_err_t handle_post_wifi(httpd_req_t *req)
     return ESP_OK;
 }
 
-void start_http_server()
+void start_http_server(bool setup_mode)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
@@ -333,13 +247,14 @@ void start_http_server()
         .handler = handle_post_config,
         .user_ctx = NULL
     };
-
-    httpd_uri_t post_wifi_uri = {
+    if (setup_mode) {
+        httpd_uri_t post_wifi_uri = {
         .uri = "/wifi",
         .method = HTTP_POST,
         .handler = handle_post_wifi,
         .user_ctx = NULL
     };
+    }
 
     httpd_register_uri_handler(g_http_server, &root_uri);
     httpd_register_uri_handler(g_http_server, &get_reading_uri);

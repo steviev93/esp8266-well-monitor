@@ -276,8 +276,13 @@ static esp_err_t start_station_mode(const char *ssid, const char *password)
 esp_err_t wifi_manager_initialize(void)
 {
     esp_err_t result;
+    bool setup_mode = false;
 
     result = wifi_init_common();
+
+    if (result != ESP_OK) {
+        return result;
+    }
 
     // credentials
     bool have_wifi = load_wifi_credentials(ssid, password, SSID_SIZE, PASSWORD_SIZE);
@@ -304,15 +309,29 @@ esp_err_t wifi_manager_initialize(void)
 
         if (!(bits & WIFI_CONNECTED_BIT)) {
             ESP_LOGW(TAG, "Wi-Fi connection failed; starting setup AP");
+
             esp_wifi_stop();
-            start_setup_ap_mode();
+
+            result = start_setup_ap_mode();
+
+            if (result != ESP_OK) {
+                return result;
+            }
+
+            setup_mode = true;
         }
     } else {
         ESP_LOGW(TAG, "No Wi-Fi credentials; starting setup AP");
-        start_setup_ap_mode();
+        result = start_setup_ap_mode();
+
+        if (result != ESP_OK) {
+            return result;
+        }
+
+        setup_mode = true;
     }
 
-    start_http_server();
+    start_http_server(setup_mode);
 
     return ESP_OK;
 }

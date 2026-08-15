@@ -9,6 +9,20 @@
 
 void save_reading_store();
 
+esp_err_t nvs_store_pending_reading(const reading_t *reading);
+
+esp_err_t nvs_service_initialize(void);
+
+esp_err_t rebuild_nvs_reading_metadata();
+
+esp_err_t load_reading_metadata(nvs_reading_metadata_t *out);
+
+esp_err_t load_nvs_reading(
+    reading_t *out
+);
+
+esp_err_t pop_metadata();
+
 esp_err_t get_reading_store(
     reading_store_t *out);
 
@@ -20,16 +34,8 @@ bool load_wifi_credentials(char *ssid, char *password, size_t ssid_size, size_t 
 
 esp_err_t  save_wifi_credentials(const char *ssid, const char *password);
 
-static void load_reading_store();
-
-static void save_reading_store();
-
 static void load_default_config();
 
 static void clamp_config(app_config_t *config);
-
-void add_reading(const reading_t *reading);
-
-bool get_latest_reading(reading_type_t *out);
 
 bool get_latest_config(app_config_t *out);

@@ -10,8 +10,7 @@
 
 #define BOARD_I2C_CLK_STRETCH_TICK  300U
 #define BOARD_I2C_TIMEOUT_MS        100U
-#define LED_GPIO                    GPIO_NUM_5
-#define BUTTON_GPIO                 GPIO_NUM_4
+#define LED_GPIO                    GPIO_NUM_12
 
 #define BOARD_ADS1115_ADDRESS       0x48U
 #define BOARD_SAMPLE_INTERVAL_MS    500U

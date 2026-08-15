@@ -16,29 +16,14 @@ typedef enum
     SUPERVISOR_STATE_FAULT
 } supervisor_state_t;
 
-/*
- * Initialize supervisor state.
- */
 esp_err_t supervisor_init(void);
 
-/*
- * Tell the supervisor whether the most recent
- * telemetry transmission succeeded.
- */
 void supervisor_report_telemetry_result(esp_err_t result);
 
 void supervisor_report_heartbeat(void);
 
-/*
- * Tell the supervisor how many entries are currently
- * stored in the offline buffer.
- */
 void supervisor_report_buffer_usage(size_t count);
 
-/*
- * Return the supervisor's current assessment
- * of overall system health.
- */
 supervisor_state_t supervisor_get_state(void);
 
 bool supervisor_is_task_healthy(void);

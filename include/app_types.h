@@ -23,14 +23,14 @@ typedef struct {
     uint32_t tail;
 } nvs_reading_metadata_t;
 
-struct app_config_t {
+typedef struct {
     uint32_t sample_settle_ms;
     uint32_t retention_count;
-};
+} app_config_t;
 
-struct reading_buffer_t {
+typedef struct {
     uint32_t sequence;
     uint32_t count;
     uint32_t head;
     reading_t readings[MAX_READINGS];
-};
+} reading_buffer_t;

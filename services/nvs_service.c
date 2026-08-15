@@ -7,7 +7,6 @@
 #include "nvs_service.h"
 
 static app_config_t g_config;
-static reading_buffer_t g_store;
 static nvs_reading_metadata_t metadata;
 
 static const char *TAG = "nvs_service";
@@ -217,18 +216,6 @@ static void load_config()
     }
 
     clamp_config(&g_config);
-}
-
-esp_err_t get_reading_store(
-    reading_buffer_t *out)
-{
-    if (out == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    *out = g_store;
-
-    return ESP_OK;
 }
 
 void save_config(app_config_t *config)
@@ -451,66 +438,6 @@ esp_err_t save_wifi_credentials(const char *ssid, const char *password)
     nvs_close(handle);
 }
 
-static void load_reading_store()
-{
-    memset(&g_store, 0, sizeof(g_store));
-
-    nvs_handle handle;
-    esp_err_t err = nvs_open("well", NVS_READONLY, &handle);
-    if (err != ESP_OK) {
-        return;
-    }
-
-    size_t len = sizeof(reading_store_t);
-    err = nvs_get_blob(handle, "readings", &g_store, &len);
-    nvs_close(handle);
-
-    if (err != ESP_OK || len != sizeof(reading_store_t)) {
-        memset(&g_store, 0, sizeof(g_store));
-    }
-
-    if (g_store.count > MAX_READINGS || g_store.head >= MAX_READINGS) {
-        memset(&g_store, 0, sizeof(g_store));
-    }
-}
-
-static void load_reading(uint32_t idx)
-{
-    memset(&g_store, 0, sizeof(g_store));
-
-    nvs_handle handle;
-    esp_err_t err = nvs_open("well", NVS_READONLY, &handle);
-    if (err != ESP_OK) {
-        return;
-    }
-
-    size_t len = sizeof(reading_store_t);
-    err = nvs_get_blob(handle, "readings", &g_store, &len);
-    nvs_close(handle);
-
-    if (err != ESP_OK || len != sizeof(reading_store_t)) {
-        memset(&g_store, 0, sizeof(g_store));
-    }
-
-    if (g_store.count > MAX_READINGS || g_store.head >= MAX_READINGS) {
-        memset(&g_store, 0, sizeof(g_store));
-    }
-}
-
-static void save_reading_store()
-{
-    nvs_handle handle;
-    esp_err_t err = nvs_open("well", NVS_READWRITE, &handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open NVS for readings");
-        return;
-    }
-
-    nvs_set_blob(handle, "readings", &g_store, sizeof(reading_store_t));
-    nvs_commit(handle);
-    nvs_close(handle);
-}
-
 static void load_default_config()
 {
     g_config.sample_settle_ms = DEFAULT_SAMPLE_SETTLE_MS;
@@ -534,48 +461,6 @@ static void clamp_config(app_config_t *config)
     if (config->retention_count > MAX_READINGS) {
         config->retention_count = MAX_READINGS;
     }
-}
-
-void add_reading(reading_t *reading)
-{
-
-    if (reading == NULL) {
-        return;
-    }
-
-    uint32_t max_keep = g_config.retention_count;
-    
-    if (max_keep > MAX_READINGS) {
-        max_keep = MAX_READINGS;
-    }
-
-    g_store.sequence++;
-
-    reading_t r = *reading;
-    r.sequence = g_store.sequence;
-    reading->sequence = g_store.sequence;
-
-    g_store.readings[g_store.head] = *reading;
-    g_store.head = (g_store.head + 1) % MAX_READINGS;
-
-    if (g_store.count < max_keep) {
-        g_store.count++;
-    } else {
-        g_store.count = max_keep;
-    }
-
-    save_reading_store();
-}
-
-bool get_latest_reading(reading_t *out)
-{
-    if (out == NULL || g_store.count == 0) {
-        return false;
-    }
-
-    uint32_t idx = (g_store.head + MAX_READINGS - 1) % MAX_READINGS;
-    *out = g_store.readings[idx];
-    return true;
 }
 
 bool get_latest_config(app_config_t *out)

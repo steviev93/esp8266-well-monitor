@@ -1,8 +1,8 @@
 #include "buffer.h"
 
-static telemetry_buffer_t telemetry_buffer;
+static reading_buffer_t telemetry_buffer;
 
-static const char *TAG = "rep27";
+static const char *TAG = "buffer";
 
 void telemetry_buffer_initialize(void)
 {
@@ -29,7 +29,7 @@ void telemetry_buffer_push(const reading_t *sample)
         ESP_LOGI(
             TAG,
             "Push to buffer for sample: %u failed",
-            (unsigned int)sample->sequence_number
+            (unsigned int)sample->sequence
         );
         return;
     }

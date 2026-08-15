@@ -20,6 +20,7 @@
 #define TELEMETRY_TASK_PRIORITY    5U
 
 void telemetry_task(void *parameter);
+
 static esp_err_t send_telemetry_sample(
     const reading_t *sample);
 

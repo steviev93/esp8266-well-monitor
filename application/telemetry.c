@@ -3,14 +3,13 @@
 #include "supervisor.h"
 #include "app_types.h"
 #include "board.h"
+#include "esp_task_wdt.h"
 
 #define TELEMETRY_URL               "http://httpbin.org/post"
 
 #define SAMPLE_PERIOD_MS            5000U
 
 #define TELEMETRY_PAYLOAD_SIZE      128U
-
-static bool inject_task_stall = false;
 
 static uint16_t cycle_ct = 0U;
 
@@ -139,12 +138,11 @@ static esp_err_t replay_buffered_telemetry(void)
                         "Replay succeded!\nBuffered samples remaining: %d",
                         (unsigned int)telemetry_buffer_count()
                     );
-                    return ESP_OK
                 }
             }
         }
-        return ESP_OK;
     }
+    return ESP_OK;
 }
 
 static esp_err_t replay_stored_telemetry(void)
@@ -204,6 +202,17 @@ void telemetry_task(void *parameter)
     reading_t sample;
     uint32_t sequence_num = 0;
 
+    esp_err_t err = esp_task_wdt_init();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(
+            TAG, 
+            "Failed to initialize task watchdog: %s\nRebooting",
+            esp_err_to_name(err)
+        );
+        reboot_soon();
+    }
+
     while (true) {
         
         if (!take_sensor_reading(&sample)) {
@@ -211,87 +220,71 @@ void telemetry_task(void *parameter)
                 TAG,
                 "Failed to grab sample"
             );
-            continue;
-        }
-        sequence_num++;
-        sample.sequence = sequence_num;
-        if (wifi_manager_is_connected()) {
-            result = replay_stored_telemetry();
-            if (result == ESP_OK) {
-                result = replay_buffered_telemetry();
-            }
-            
-            if (result == ESP_OK) {
-                result = send_telemetry_sample(&sample);
-            }
-            
-            if (result != ESP_OK) {
-                ESP_LOGE(
-                    TAG,
-                    "Sample: %u failed to send",
-                    (unsigned int) sample.sequence
-                );
-                telemetry_buffer_push(&sample);
+        } else {
+            sequence_num++;
+            sample.sequence = sequence_num;
+            if (wifi_manager_is_connected()) {
+                result = replay_stored_telemetry();
+                if (result == ESP_OK) {
+                    result = replay_buffered_telemetry();
+                }
                 
+                if (result == ESP_OK) {
+                    result = send_telemetry_sample(&sample);
+                }
+                
+                if (result != ESP_OK) {
+                    ESP_LOGE(
+                        TAG,
+                        "Sample: %u failed to send",
+                        (unsigned int) sample.sequence
+                    );
+                    telemetry_buffer_push(&sample);
+                    
+                } else {
+                    ESP_LOGI(
+                        TAG,
+                        "Send succeeded for sample: %u",
+                        (unsigned int)sample.sequence
+                    );
+                }
             } else {
+
                 ESP_LOGI(
                     TAG,
-                    "Send succeeded for sample: %u",
+                    "Wi-Fi disconnected, buffering sample: %u",
                     (unsigned int)sample.sequence
                 );
-            }
-        } else {
 
-            ESP_LOGI(
-                TAG,
-                "Wi-Fi disconnected, buffering sample: %u",
-                (unsigned int)sample.sequence
-            );
+                if (!telemetry_buffer_is_full()) {
 
-            if (!telemetry_buffer_is_full()) {
+                    telemetry_buffer_push(&sample);
 
-                telemetry_buffer_push(&sample);
+                } else {
 
-            } else {
+                    reading_t oldest;
 
-                reading_t oldest;
+                    if (telemetry_buffer_peek(&oldest)) {
 
-                if (telemetry_buffer_peek(&oldest)) {
+                        if (nvs_store_pending_reading(&oldest) == ESP_OK) {
 
-                    if (nvs_store_pending_reading(&oldest) == ESP_OK) {
+                            telemetry_buffer_pop();
+                            telemetry_buffer_push(&sample);
 
-                        telemetry_buffer_pop();
-                        telemetry_buffer_push(&sample);
+                        } else {
 
-                    } else {
-
-                        ESP_LOGE(
-                            TAG,
-                            "Failed to spill buffered reading to NVS"
-                        );
+                            ESP_LOGE(
+                                TAG,
+                                "Failed to spill buffered reading to NVS"
+                            );
+                        }
                     }
                 }
             }
         }
-        if (!inject_task_stall) {
-            supervisor_report_heartbeat();
-            cycle_ct++;
-        } else {
-            ESP_LOGE(
-                TAG,
-                "FAULT DETECTED"
-            );
-            if (cycle_dur != 1) {
-                cycle_dur--;
-            } else {
-                cycle_dur = 4;
-                cycle_ct = 0;
-                inject_task_stall = false;
-            }
-        }
-        if (cycle_ct == 4) {
-            inject_task_stall = true;
-        }
+        
+        esp_task_wdt_reset();
+            
         vTaskDelay(pdMS_TO_TICKS(SAMPLE_PERIOD_MS));
     }
 }
