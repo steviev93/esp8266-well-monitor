@@ -85,10 +85,95 @@ esp_err_t nvs_service_initialize(void)
 
     return ESP_OK;
 }
+    //TODO
 
 esp_err_t rebuild_nvs_reading_metadata() {
 
+    metadata.count = 0;
+    metadata.head = 0;
+    metadata.tail = 0;
 
+    nvs_handle handle;
+
+    esp_err_t err = nvs_open(
+        "telemetry",
+        NVS_READONLY,
+        &handle
+    );
+
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    bool found_any = false;
+
+    uint32_t smallest_sequence = UINT32_MAX;
+    uint32_t largest_sequence = 0;
+
+    uint32_t smallest_index = 0;
+    uint32_t largest_index = 0;
+
+    for (uint32_t i = 0; i < NVS_READING_CAPACITY; i++) {
+
+        char key[16];
+
+        snprintf(
+            key,
+            sizeof(key),
+            "r%03u",
+            i
+        );
+
+        reading_t reading;
+        size_t len = sizeof(reading);
+
+        err = nvs_get_blob(
+            handle,
+            key,
+            &reading,
+            &len
+        );
+
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            continue;
+        }
+
+        if (err != ESP_OK) {
+            nvs_close(handle);
+            return err;
+        }
+
+        if (len != sizeof(reading)) {
+            nvs_close(handle);
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        metadata.count++;
+
+        if (!found_any || reading.sequence > largest_sequence) {
+            largest_sequence = reading.sequence;
+            largest_index = i;
+        }
+
+        found_any = true;
+    }
+
+    nvs_close(handle);
+
+    if (!found_any) {
+        metadata.head = 0;
+        metadata.tail = 0;
+        metadata.count = 0;
+
+        return ESP_OK;
+    }
+
+    metadata.tail = smallest_index;
+
+    metadata.head = (largest_index + 1) % NVS_READING_CAPACITY;
+
+    return ESP_OK;
+    
 }
 
 static void load_config()
