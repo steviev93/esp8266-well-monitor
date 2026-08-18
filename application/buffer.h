@@ -1,7 +1,7 @@
 #pragma once
 
 #include "telemetry.h"
-#include "app_types.h"
+#include "../include/app_types.h"
 
 void telemetry_buffer_initialize(void);
 

@@ -2,6 +2,28 @@
 
 static httpd_handle_t g_http_server = NULL;
 
+static const char *TAG = "http_server";
+
+static char *read_request_body(httpd_req_t *req);
+
+static bool json_find_uint(
+    const char *body,
+    const char *key,
+    uint32_t *out
+);
+
+static bool json_find_string(
+    const char *body,
+    const char *key,
+    char *out,
+    size_t out_size
+);
+
+static esp_err_t send_json(
+    httpd_req_t *req,
+    const char *json
+);
+
 static esp_err_t handle_root(httpd_req_t *req)
 {
     const char *html =
@@ -87,14 +109,14 @@ static esp_err_t handle_post_sample(httpd_req_t *req)
         "\"level_percent_x100\":%ld,"
         "\"water_level_mm\":%ld"
         "}",
-        r->sequence,
-        r->ads_raw,
-        (long)r->shunt_uV,
-        (long)r->shunt_mV,
-        (long)r->loop_uA,
-        (long)r->normalized_permille,
-        (long)r->level_percent_x100,
-        (long)r->water_level_mm
+        r.sequence,
+        r.ads_raw,
+        (long)r.shunt_uV,
+        (long)r.shunt_mV,
+        (long)r.loop_uA,
+        (long)r.normalized_permille,
+        (long)r.level_percent_x100,
+        (long)r.water_level_mm
     );
 
     send_json(req, json);
@@ -137,9 +159,25 @@ static esp_err_t handle_post_config(httpd_req_t *req)
 {
     
     char *body = read_request_body(req);
+    if (body == NULL) {
+        send_json(
+            req,
+            "{\"ok\":false,\"error\":\"invalid_body\"}"
+        );
+        return ESP_OK;
+    }
     uint32_t value;
 
     app_config_t config;
+
+    if (!get_latest_config(&config)) {
+        free(body);
+        send_json(
+            req,
+            "{\"ok\":false,\"error\":\"config_unavailable\"}"
+        );
+        return ESP_OK;
+    }
 
     if (json_find_uint(
             body,
@@ -220,13 +258,6 @@ void start_http_server(bool setup_mode)
         .user_ctx = NULL
     };
 
-    httpd_uri_t get_readings_uri = {
-        .uri = "/readings",
-        .method = HTTP_GET,
-        .handler = handle_get_readings,
-        .user_ctx = NULL
-    };
-
     httpd_uri_t post_sample_uri = {
         .uri = "/sample",
         .method = HTTP_POST,
@@ -249,20 +280,19 @@ void start_http_server(bool setup_mode)
     };
     if (setup_mode) {
         httpd_uri_t post_wifi_uri = {
-        .uri = "/wifi",
-        .method = HTTP_POST,
-        .handler = handle_post_wifi,
-        .user_ctx = NULL
-    };
+            .uri = "/wifi",
+            .method = HTTP_POST,
+            .handler = handle_post_wifi,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(g_http_server, &post_wifi_uri);
     }
 
     httpd_register_uri_handler(g_http_server, &root_uri);
     httpd_register_uri_handler(g_http_server, &get_reading_uri);
-    httpd_register_uri_handler(g_http_server, &get_readings_uri);
     httpd_register_uri_handler(g_http_server, &post_sample_uri);
     httpd_register_uri_handler(g_http_server, &get_config_uri);
     httpd_register_uri_handler(g_http_server, &post_config_uri);
-    httpd_register_uri_handler(g_http_server, &post_wifi_uri);
 
     ESP_LOGI(TAG, "HTTP server started");
 }
@@ -348,7 +378,7 @@ static bool json_find_uint(const char *body, const char *key, uint32_t *out)
         10
     );
 
-    if (end == pos || ) {
+    if (end == pos || value > UINT32_MAX) {
         return false;
     }
 
@@ -437,5 +467,5 @@ static esp_err_t send_json(httpd_req_t *req, const char *json)
         return err;
     }
 
-    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return httpd_resp_send(req, json, strlen(json));
 }

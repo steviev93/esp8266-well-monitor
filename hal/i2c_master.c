@@ -10,7 +10,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
-#include "board.h"
+#include "../application/board.h"
 
 #define I2C_ADDRESS_WRITE(address) \
     ((uint8_t)(((address) << 1U) | I2C_MASTER_WRITE))

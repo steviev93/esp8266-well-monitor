@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #define MAX_READINGS                 256
+#define TELEMETRY_BUFFER_CAPACITY    256
 
 typedef struct {
     uint32_t sequence;
@@ -29,7 +30,7 @@ typedef struct {
 } app_config_t;
 
 typedef struct {
-    uint32_t sequence;
+    uint32_t tail;
     uint32_t count;
     uint32_t head;
     reading_t readings[MAX_READINGS];

@@ -2,6 +2,16 @@
 
 #include <stdint.h>
 #include "esp_err.h"
+#include <stdbool.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "esp_err.h"
+#include "esp_log.h"
+
+#include "../application/board.h"
+#include "../hal/i2c_master.h"
 
 
 typedef enum {
@@ -29,3 +39,5 @@ esp_err_t ads1115_read_single_ended(
 );
 
 float ads1115_raw_to_voltage(int16_t raw_value);
+
+bool ads1115_read_differential_a0_a1_raw(int16_t *raw, float *volts);

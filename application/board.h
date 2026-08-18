@@ -1,8 +1,18 @@
 #pragma once
 
-#include "driver/gpio.h"
-#include "driver/i2c.h"
+#include <string.h>
+#include <stdint.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_system.h"
 #include "esp_err.h"
+
+#include "driver/gpio.h"
+#include "../services/nvs_service.h"
+#include "../hal/i2c_master.h"
+#include "../drivers/ads1115.h"
+#include "../include/app_types.h"
 
 #define BOARD_I2C_PORT              I2C_NUM_0
 #define BOARD_I2C_SDA_GPIO          GPIO_NUM_4

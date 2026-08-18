@@ -1,17 +1,5 @@
 #include "ads1115.h"
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-#include "esp_err.h"
-#include "esp_log.h"
-
-#include "board.h"
-#include "hal/i2c_master.h"
-
 #define ADS1115_REG_CONVERSION          0x00U
 #define ADS1115_REG_CONFIG              0x01U
 
@@ -252,25 +240,59 @@ float ads1115_raw_to_voltage(int16_t raw_value) {
     ) / ADS1115_POSITIVE_COUNTS;
 }
 
-static bool ads1115_read_differential_a0_a1_raw(int16_t &raw, float &volts)
+bool ads1115_read_differential_a0_a1_raw(
+    int16_t *raw,
+    float *volts)
 {
-    if (!ads1115_write_register(ADS1115_REG_CONFIG, ADS1115_CONFIG_A0_A1_SINGLESHOT)) {
-        ESP_LOGE(TAG, "ADS1115 config write failed");
+    if (raw == NULL || volts == NULL) {
+        return false;
+    }
+
+    esp_err_t result = ads1115_write_register(
+        ADS1115_REG_CONFIG,
+        ADS1115_CONFIG_A0_A1_SINGLESHOT
+    );
+
+    if (result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "ADS1115 config write failed: %s",
+            esp_err_to_name(result)
+        );
+
         return false;
     }
 
     vTaskDelay(pdMS_TO_TICKS(20));
 
-    uint16_t raw_u16 = 0;
-    if (!ads1115_read_register(ADS1115_REG_CONV, raw_u16)) {
-        ESP_LOGE(TAG, "ADS1115 conversion read failed");
+    uint16_t raw_u16 = 0U;
+
+    result = ads1115_read_register(
+        ADS1115_REG_CONVERSION,
+        &raw_u16
+    );
+
+    if (result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "ADS1115 conversion read failed: %s",
+            esp_err_to_name(result)
+        );
+
         return false;
     }
 
-    raw = (int16_t)raw_u16;
-    volts = raw * ADS1115_LSB_VOLTS;
+    *raw = (int16_t)raw_u16;
 
-    ESP_LOGI(TAG, "ADS raw=%d", raw);
+    *volts =
+        (float)(*raw) *
+        ADS1115_LSB_VOLTS;
+
+    ESP_LOGI(
+        TAG,
+        "ADS raw=%d",
+        (int)*raw
+    );
 
     return true;
 }

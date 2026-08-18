@@ -6,7 +6,7 @@
 
 #include "esp_log.h"
 
-#include "wifi_manager.h"
+#include "../services/wifi_manager.h"
 #include "buffer.h"
 
 #define TELEMETRY_FAILURE_THRESHOLD     3U

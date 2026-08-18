@@ -33,7 +33,7 @@ void telemetry_buffer_push(const reading_t *sample)
         );
         return;
     }
-    telemetry_buffer.samples[telemetry_buffer.head] = *sample;
+    telemetry_buffer.readings[telemetry_buffer.head] = *sample;
     telemetry_buffer.head++;
     
     if (telemetry_buffer.head == TELEMETRY_BUFFER_CAPACITY) {
@@ -56,7 +56,7 @@ bool telemetry_buffer_peek(reading_t *sample_out)
         return false;
     }
     
-    *sample_out = telemetry_buffer.samples[telemetry_buffer.tail];
+    *sample_out = telemetry_buffer.readings[telemetry_buffer.tail];
     
     return true;
 }

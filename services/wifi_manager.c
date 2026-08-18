@@ -10,6 +10,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "http_server.h"
 #include "wifi_manager.h"
 
 #include "nvs_service.h"
@@ -36,22 +37,38 @@ typedef enum {
     WIFI_MANAGER_STATE_FAILED
 } wifi_manager_state_t;
 
-#define WIFI_CONNECTED_BIT           BIT0
-
-static bool g_wifi_connected = false;
-
 static EventGroupHandle_t wifi_event_group = NULL;
 
 static wifi_manager_state_t wifi_manager_state =
     WIFI_MANAGER_STATE_UNINITIALIZED;
 
-wifi_init_config_t wifi_initialization_configuration;
 wifi_config_t station_configuration;
 
 static uint32_t wifi_retry_count = 0U;
 
 char ssid[SSID_SIZE];
 char password[PASSWORD_SIZE];
+
+static void configure_static_ip()
+{
+    tcpip_adapter_ip_info_t ip_info;
+    memset(&ip_info, 0, sizeof(ip_info));
+
+    IP4_ADDR(&ip_info.ip, 192, 168, 68, 156);       // ESP fixed IP
+    IP4_ADDR(&ip_info.gw, 192, 168, 68, 1);        // router/gateway
+    IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0); // subnet mask
+
+    ESP_ERROR_CHECK(tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
+    ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info));
+
+    tcpip_adapter_dns_info_t dns;
+    memset(&dns, 0, sizeof(dns));
+
+    IP4_ADDR(&dns.ip, 192, 168, 68, 1); // usually your router
+    tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns);
+
+    ESP_LOGI(TAG, "Static IP configured: 192.168.68.55");
+}
 
 static void wifi_event_handler(
     void *handler_argument,
@@ -126,7 +143,7 @@ static void wifi_event_handler(
 
 static esp_err_t wifi_init_common() {
     esp_err_t error;
-    wifi_initialization_configuration =
+    wifi_init_config_t wifi_initialization_configuration =
         WIFI_INIT_CONFIG_DEFAULT();
 
     wifi_event_group = xEventGroupCreate();
@@ -189,12 +206,14 @@ static esp_err_t wifi_init_common() {
             "IP_EVENT event handler registration failed: %s",
             esp_err_to_name(error)
         );
-        return error;
+        
     }
+    return error;
 }
 
-static void start_setup_ap_mode()
+static esp_err_t start_setup_ap_mode()
 {
+    esp_err_t result;
     wifi_config_t ap_config;
     memset(&ap_config, 0, sizeof(ap_config));
 
@@ -210,25 +229,34 @@ static void start_setup_ap_mode()
     ap_config.ap.authmode = WIFI_AUTH_OPEN;
     ap_config.ap.max_connection = 2;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    result = esp_wifi_set_mode(WIFI_MODE_AP);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = esp_wifi_start();
 
     ESP_LOGI(TAG, "Setup AP mode started: %s", ap_ssid);
+
+    return result;
 }
 
 static esp_err_t start_station_mode(const char *ssid, const char *password)
 {
+    esp_err_t error;
     memset(&station_configuration, 0, sizeof(station_configuration));
 
      strncpy(
         (char *)station_configuration.sta.ssid, 
-        *ssid,
+        ssid,
         sizeof(station_configuration.sta.ssid)
     );
     strncpy(
         (char *)station_configuration.sta.password, 
-        *password,
+        password,
         sizeof(station_configuration.sta.password)
     );
 
@@ -336,28 +364,7 @@ esp_err_t wifi_manager_initialize(void)
     return ESP_OK;
 }
 
-static bool wifi_manager_is_connected(void) {
+bool wifi_manager_is_connected(void) {
     EventBits_t event_bits = xEventGroupGetBits(wifi_event_group);
     return (event_bits & WIFI_CONNECTED_BIT) != 0U;
-}
-
-static void configure_static_ip()
-{
-    tcpip_adapter_ip_info_t ip_info;
-    memset(&ip_info, 0, sizeof(ip_info));
-
-    IP4_ADDR(&ip_info.ip, 192, 168, 68, 156);       // ESP fixed IP
-    IP4_ADDR(&ip_info.gw, 192, 168, 68, 1);        // router/gateway
-    IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0); // subnet mask
-
-    ESP_ERROR_CHECK(tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
-    ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info));
-
-    tcpip_adapter_dns_info_t dns;
-    memset(&dns, 0, sizeof(dns));
-
-    IP4_ADDR(&dns.ip, 192, 168, 1, 1); // usually your router
-    tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns);
-
-    ESP_LOGI(TAG, "Static IP configured: 192.168.68.55");
 }

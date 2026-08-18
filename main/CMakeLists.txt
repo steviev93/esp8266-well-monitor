@@ -6,4 +6,6 @@ idf_component_register(SRCS "main.c"
                             "../application/buffer.c" 
                             "../application/supervisor.c" 
                             "../services/nvs_service.c"
+                            "../application/board.c"
+                            "../services/http_server.c"
 INCLUDE_DIRS ".")

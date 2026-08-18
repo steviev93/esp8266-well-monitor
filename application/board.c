@@ -1,7 +1,4 @@
-#pragma once
-
 #include "board.h"
-#include "ads1115.h"
 
 #define PIN_SENSOR_ENABLE    GPIO_NUM_14  // NodeMCU D5
 #define SENSOR_ENABLE_ACTIVE_LEVEL  1
@@ -14,7 +11,12 @@
 
 #define SHUNT_OHMS_INT 150
 
- sensor_power_init(void);
+static const char *TAG = "board";
+
+static uint32_t millis_now(void)
+{
+    return xTaskGetTickCount() * portTICK_PERIOD_MS;
+}
 
 esp_err_t sensor_enable(bool enabled)
 {
@@ -32,47 +34,72 @@ void reboot_soon()
     esp_restart();
 }
 
-void gpio_init_all()
+void gpio_init_all(void)
 {
     gpio_config_t out_conf;
     memset(&out_conf, 0, sizeof(out_conf));
 
-    out_conf.pin_bit_mask = (1ULL << PIN_SENSOR_ENABLE);
+    out_conf.pin_bit_mask =
+        (1ULL << PIN_SENSOR_ENABLE);
+
     out_conf.mode = GPIO_MODE_OUTPUT;
     out_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     out_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
     out_conf.intr_type = GPIO_INTR_DISABLE;
+
     gpio_config(&out_conf);
 
     sensor_enable(false);
 
-    gpio_config_t i2c_conf;
-    memset(&i2c_conf, 0, sizeof(i2c_conf));
+    esp_err_t result = i2c_master_bus_init();
 
-    i2c_conf.pin_bit_mask = (1ULL << PIN_I2C_SDA) | (1ULL << PIN_I2C_SCL);
-    // ESP8266 RTOS SDK v3.4 does not define GPIO_MODE_INPUT_OUTPUT_OD.
-    // Open-drain output still allows the line to be released HIGH and read with gpio_get_level().
-    i2c_conf.mode = GPIO_MODE_OUTPUT_OD;
-    i2c_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-    i2c_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    i2c_conf.intr_type = GPIO_INTR_DISABLE;
-    gpio_config(&i2c_conf);
+    if (result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "I2C initialization failed: %s",
+            esp_err_to_name(result)
+        );
 
-    sda_high();
-    scl_high();
+        return;
+    }
+
+    result = ads1115_init();
+
+    if (result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "ADS1115 initialization failed: %s",
+            esp_err_to_name(result)
+        );
+    }
 }
 
 
 bool take_sensor_reading(reading_t *out)
 {
+
+    if (out == NULL) {
+        return false;
+    }
+    
     ESP_LOGI(TAG, "Turning sensor loop ON");
     sensor_enable(true);
 
-    vTaskDelay(pdMS_TO_TICKS(g_config.sample_settle_ms));
+    app_config_t config;
+
+    if (!get_latest_config(&config)) {
+        ESP_LOGE(TAG, "Unable to load application config");
+        sensor_enable(false);
+        return false;
+    }
+
+    vTaskDelay(
+        pdMS_TO_TICKS(config.sample_settle_ms)
+    );
 
     float volts_unused = 0.0f;
     int16_t raw = 0;
-    bool ok = ads1115_read_differential_a0_a1_raw(raw, volts_unused);
+    bool ok = ads1115_read_differential_a0_a1_raw(&raw, &volts_unused);
 
     sensor_enable(false);
     ESP_LOGI(TAG, "Turning sensor loop OFF");
@@ -138,16 +165,16 @@ bool take_sensor_reading(reading_t *out)
 
     int32_t level_percent_x100 = normalized_permille * 10;
 
-    memset(&out, 0, sizeof(out));
+    memset(out, 0, sizeof(*out));
 
-    out.uptime_ms = millis_now();
-    out.ads_raw = raw;
-    out.shunt_uV = shunt_uV;
-    out.shunt_mV = shunt_mV;
-    out.loop_uA = loop_uA;
-    out.normalized_permille = normalized_permille;
-    out.level_percent_x100 = level_percent_x100;
-    out.water_level_mm = water_level_mm;
+    out->uptime_ms = millis_now();
+    out->ads_raw = raw;
+    out->shunt_uV = shunt_uV;
+    out->shunt_mV = shunt_mV;
+    out->loop_uA = loop_uA;
+    out->normalized_permille = normalized_permille;
+    out->level_percent_x100 = level_percent_x100;
+    out->water_level_mm = water_level_mm;
 
     ESP_LOGI(
         TAG,

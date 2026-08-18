@@ -1,5 +1,3 @@
-#pragma once
-
 #include "esp_log.h"
 #include "esp_err.h"
 #include "nvs.h"
@@ -10,6 +8,74 @@ static app_config_t g_config;
 static nvs_reading_metadata_t metadata;
 
 static const char *TAG = "nvs_service";
+
+static void clamp_config(app_config_t *config)
+{
+    if (config->sample_settle_ms < 100) {
+        config->sample_settle_ms = 100;
+    }
+
+    if (config->sample_settle_ms > 10000) {
+        config->sample_settle_ms = 10000;
+    }
+
+    if (config->retention_count < 1) {
+        config->retention_count = 1;
+    }
+
+    if (config->retention_count > MAX_READINGS) {
+        config->retention_count = MAX_READINGS;
+    }
+}
+
+static void load_default_config()
+{
+    g_config.sample_settle_ms = DEFAULT_SAMPLE_SETTLE_MS;
+    g_config.retention_count = DEFAULT_RETENTION_COUNT;
+}
+
+static void load_config()
+{
+    load_default_config();
+
+    nvs_handle handle;
+
+    esp_err_t err =
+        nvs_open("well", NVS_READONLY, &handle);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "No config namespace yet; using defaults"
+        );
+
+        return;
+    }
+
+    size_t len = sizeof(g_config);
+
+    err = nvs_get_blob(
+        handle,
+        "config",
+        &g_config,
+        &len
+    );
+
+    nvs_close(handle);
+
+    if (err != ESP_OK ||
+        len != sizeof(g_config)) {
+
+        ESP_LOGW(
+            TAG,
+            "No valid config found; using defaults"
+        );
+
+        load_default_config();
+    }
+
+    clamp_config(&g_config);
+}
 
 esp_err_t nvs_store_pending_reading(const reading_t *reading)
 {
@@ -80,6 +146,8 @@ esp_err_t nvs_service_initialize(void)
         return err;
     }
 
+    load_config();
+
     rebuild_nvs_reading_metadata();
 
     return ESP_OK;
@@ -149,6 +217,11 @@ esp_err_t rebuild_nvs_reading_metadata() {
 
         metadata.count++;
 
+        if (!found_any || reading.sequence < smallest_sequence) {
+            smallest_sequence = reading.sequence;
+            smallest_index = i;
+        }
+
         if (!found_any || reading.sequence > largest_sequence) {
             largest_sequence = reading.sequence;
             largest_index = i;
@@ -175,49 +248,6 @@ esp_err_t rebuild_nvs_reading_metadata() {
     
 }
 
-static void load_config()
-{
-    load_default_config();
-
-    nvs_handle handle;
-
-    esp_err_t err =
-        nvs_open("well", NVS_READONLY, &handle);
-
-    if (err != ESP_OK) {
-        ESP_LOGW(
-            TAG,
-            "No config namespace yet; using defaults"
-        );
-
-        return;
-    }
-
-    size_t len = sizeof(g_config);
-
-    err = nvs_get_blob(
-        handle,
-        "config",
-        &g_config,
-        &len
-    );
-
-    nvs_close(handle);
-
-    if (err != ESP_OK ||
-        len != sizeof(g_config)) {
-
-        ESP_LOGW(
-            TAG,
-            "No valid config found; using defaults"
-        );
-
-        load_default_config();
-    }
-
-    clamp_config(&g_config);
-}
-
 void save_config(app_config_t *config)
 {
     clamp_config(config);
@@ -234,79 +264,57 @@ void save_config(app_config_t *config)
     nvs_close(handle);
 }
 
-bool load_wifi_credentials(char *ssid, char *password, size_t ssid_size, size_t pass_size)
+bool load_wifi_credentials(
+    char *ssid,
+    char *password,
+    size_t ssid_size,
+    size_t pass_size)
 {
+    if (ssid == NULL ||
+        password == NULL ||
+        ssid_size == 0 ||
+        pass_size == 0) {
+        return false;
+    }
+
     nvs_handle handle;
-    esp_err_t err = nvs_open("wifi", NVS_READONLY, &handle);
+
+    esp_err_t err =
+        nvs_open("wifi", NVS_READONLY, &handle);
+
     if (err != ESP_OK) {
         return false;
     }
 
-    char ssid_buf[ssid_size] = {0};
-    char pass_buf[pass_size] = {0};
+    size_t ssid_len = ssid_size;
+    size_t pass_len = pass_size;
 
-    size_t ssid_len = sizeof(ssid_buf);
-    size_t pass_len = sizeof(pass_buf);
+    err = nvs_get_str(
+        handle,
+        "ssid",
+        ssid,
+        &ssid_len
+    );
 
-    err = nvs_get_str(handle, "ssid", ssid_buf, &ssid_len);
     if (err != ESP_OK) {
         nvs_close(handle);
         return false;
     }
 
-    err = nvs_get_str(handle, "password", pass_buf, &pass_len);
+    err = nvs_get_str(
+        handle,
+        "password",
+        password,
+        &pass_len
+    );
+
     if (err != ESP_OK) {
-        pass_buf[0] = '\0';
+        password[0] = '\0';
     }
 
     nvs_close(handle);
-
-    strncpy(ssid, ssid_buf, ssid_size - 1);
-    ssid[ssid_size - 1] = '\0';
-
-    strncpy(password, pass_buf, pass_size - 1);
-    password[pass_size - 1] = '\0';
 
     return ssid[0] != '\0';
-}
-
-esp_err_t load_reading_metadata(nvs_reading_metadata_t *out) {
-    if (out == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    nvs_handle handle;
-
-    esp_err_t err = nvs_open(
-        "telemetry",
-        NVS_READONLY,
-        &handle
-    );
-
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    size_t len = sizeof(*out);
-
-    err = nvs_get_blob(
-        handle,
-        "metadata",
-        out,
-        &len
-    );
-
-    nvs_close(handle);
-
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    if (len != sizeof(*out)) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    return ESP_OK;
 }
 
 esp_err_t load_nvs_reading(
@@ -360,8 +368,8 @@ esp_err_t load_nvs_reading(
 }
 
 esp_err_t pop_metadata() {
-    if (metdata.count == 0) {
-        return ESP_ERR_NOT_FOUND
+    if (metadata.count == 0) {
+        return ESP_ERR_NOT_FOUND;
     }
 
     char key[16];
@@ -404,17 +412,26 @@ esp_err_t pop_metadata() {
     return ESP_OK;
 }
 
-esp_err_t save_wifi_credentials(const char *ssid, const char *password)
+esp_err_t save_wifi_credentials(
+    const char *ssid,
+    const char *password)
 {
     if (ssid == NULL || ssid[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
 
     nvs_handle handle;
-    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &handle);
+
+    esp_err_t err =
+        nvs_open("wifi", NVS_READWRITE, &handle);
+
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open NVS for Wi-Fi credentials");
-        return;
+        ESP_LOGE(
+            TAG,
+            "Failed to open NVS for Wi-Fi credentials"
+        );
+
+        return err;
     }
 
     err = nvs_set_str(handle, "ssid", ssid);
@@ -425,42 +442,15 @@ esp_err_t save_wifi_credentials(const char *ssid, const char *password)
             "password",
             password ? password : ""
         );
-        if (err != ESP_OK) {
-            ESP_LOGE(
-                TAG,
-                "Password save failed"
-            );
-        } else {
-
-        }
     }
-    nvs_commit(handle);
+
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+
     nvs_close(handle);
-}
 
-static void load_default_config()
-{
-    g_config.sample_settle_ms = DEFAULT_SAMPLE_SETTLE_MS;
-    g_config.retention_count = DEFAULT_RETENTION_COUNT;
-}
-
-static void clamp_config(app_config_t *config)
-{
-    if (config->sample_settle_ms < 100) {
-        config->sample_settle_ms = 100;
-    }
-
-    if (config->sample_settle_ms > 10000) {
-        config->sample_settle_ms = 10000;
-    }
-
-    if (config->retention_count < 1) {
-        config->retention_count = 1;
-    }
-
-    if (config->retention_count > MAX_READINGS) {
-        config->retention_count = MAX_READINGS;
-    }
+    return err;
 }
 
 bool get_latest_config(app_config_t *out)
@@ -474,11 +464,13 @@ bool get_latest_config(app_config_t *out)
     return true;
 }
 
-void get_latest_metadata(nvs_reading_metadata_t *out)
+esp_err_t get_latest_metadata(
+    nvs_reading_metadata_t *out)
 {
-    if (out == NULL || metadata.count == 0) {
-        return false;
+    if (out == NULL) {
+        return ESP_ERR_INVALID_ARG;
     }
-    
+
     *out = metadata;
+    return ESP_OK;
 }

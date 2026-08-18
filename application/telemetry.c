@@ -1,19 +1,10 @@
 #include "telemetry.h"
-#include "buffer.h"
-#include "supervisor.h"
-#include "app_types.h"
-#include "board.h"
-#include "esp_task_wdt.h"
 
 #define TELEMETRY_URL               "http://httpbin.org/post"
 
 #define SAMPLE_PERIOD_MS            5000U
 
 #define TELEMETRY_PAYLOAD_SIZE      128U
-
-static uint16_t cycle_ct = 0U;
-
-static uint16_t cycle_dur = 4U;
 
 static const char *TAG = "telemetry";
 
@@ -23,8 +14,6 @@ static esp_err_t send_telemetry_sample(
     if (sample == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-
-    esp_err_t err;
     
     char payload[384];
     int result = snprintf(
@@ -152,7 +141,7 @@ static esp_err_t replay_stored_telemetry(void)
         reading_t reading;
         esp_err_t err = load_nvs_reading(&reading);
 
-        if (err == ESP_ERR_NVS_NOT_FOUND) {
+        if (err == ESP_ERR_NOT_FOUND) {
             return ESP_OK;
         }
 
