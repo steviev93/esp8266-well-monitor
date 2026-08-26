@@ -7,3 +7,6 @@ sdkconfig.old
 *.map
 .vscode/
 .idea/
+.vs/
+bin/
+obj/
